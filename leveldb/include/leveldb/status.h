@@ -10,6 +10,8 @@ public:
     Status() noexcept : state_(nullptr) {}
     ~Status() { delete[] state_; }
 
+    bool ok() const { return true; }
+
 private:
     const char* state_;
 };

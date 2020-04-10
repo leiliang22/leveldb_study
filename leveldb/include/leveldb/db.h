@@ -7,6 +7,7 @@
 #include "leveldb/options.h"
 #include "leveldb/export.h"
 #include "leveldb/status.h"
+#include "leveldb/slice.h"
 
 namespace leveldb {
 
@@ -23,7 +24,7 @@ public:
     static Status Open(const Options& options, const std::string& name,
 		       DB** dbptr);
     
-    DB() = defaut;
+    DB() = default;
 
     DB(const DB&) = delete;
     DB& operator=(const DB&) =delete;
@@ -42,7 +43,7 @@ public:
     //
     // may return some other Status on a error.
     virtual Status Get(const ReadOptions& options, const Slice& key,
-		       const Slice& value) = 0;
+		       std::string* value) = 0;
 };
 
 }  // namespace leveldb

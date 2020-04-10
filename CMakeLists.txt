@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.15)
 project (leveldb-demo VERSION 1.22.0 LANGUAGES C CXX)
 
 set(INC_DIR ./leveldb/include)
@@ -11,4 +11,4 @@ aux_source_directory(. DIR_SRCS)
 add_subdirectory(leveldb)
 
 add_executable(leveldb-demo ${DIR_SRCS})
-#target_link_libraries(leveldb-demo leveldb)
+target_link_libraries(leveldb-demo leveldb)

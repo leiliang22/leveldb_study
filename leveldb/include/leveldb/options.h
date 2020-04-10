@@ -4,7 +4,11 @@
 #include <stddef.h>
 #include "leveldb/export.h"
 
+
+
 namespace leveldb {
+
+#define LEVEL_EXPORT
 
 struct LEVEL_EXPORT Options {
     Options();
@@ -20,6 +24,6 @@ struct LEVEL_EXPORT ReadOptions {
     ReadOptions() = default;
 };
 
-};  // namespace leveldb
+}  // namespace leveldb
 
 #endif  // STORAGE_LEVELDB_INCLUDE_OPTIONS_H_

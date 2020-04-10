@@ -1,4 +1,4 @@
-#include "include/leveldb/db.h"
+#include "leveldb/db.h"
 #include <iostream>
 #include <string.h>
 #include <assert.h>
@@ -7,7 +7,7 @@ void test_leveldb() {
     leveldb::DB* db;
     leveldb::Options options;
     options.create_if_missing = true;
-    leveldb::Status status = leveldb::DB::Open(options,"/tmp/test", &db)
+    leveldb::Status status = leveldb::DB::Open(options,"/tmp/test", &db);
     assert(status.ok());
 
     std::string key="leil";
@@ -25,6 +25,6 @@ void test_leveldb() {
 
 int main() {
     std::cout << "Hello levelDB !" << std::endl;
-    //test_leveldb();
+    test_leveldb();
     return 0;
 }
