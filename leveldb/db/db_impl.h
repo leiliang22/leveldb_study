@@ -16,6 +16,10 @@ public:
 
     Status Put(const WriteOptions& options, const Slice& key, const Slice& value) override;
     Status Get(const ReadOptions& options, const Slice& key, std::string* value) override;
+
+private:
+    port::Mutex mutex_;
+    VersionSet* const versions_ GUARDED_BY(mutex_);
 };
 
 }  // namespace leveldb

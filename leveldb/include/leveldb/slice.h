@@ -6,7 +6,7 @@
 
 namespace leveldb {
 
-class LEVEL_EXPORT Slice {
+class LEVELDB_EXPORT Slice {
 public:
     Slice() : data_(""), size_(0) {}
     Slice(const std::string& s) : data_(s.data()), size_(s.size()) {}

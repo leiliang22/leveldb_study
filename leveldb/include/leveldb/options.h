@@ -8,19 +8,17 @@
 
 namespace leveldb {
 
-#define LEVEL_EXPORT
-
-struct LEVEL_EXPORT Options {
+struct LEVELDB_EXPORT Options {
     Options();
 
     bool create_if_missing = false;
 };
 
-struct LEVEL_EXPORT WriteOptions {
+struct LEVELDB_EXPORT WriteOptions {
     WriteOptions() = default;
 };
 
-struct LEVEL_EXPORT ReadOptions {
+struct LEVELDB_EXPORT ReadOptions {
     ReadOptions() = default;
 };
 

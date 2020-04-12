@@ -10,6 +10,7 @@ public:
     Status() noexcept : state_(nullptr) {}
     ~Status() { delete[] state_; }
 
+    static Status OK() { return Status(); }
     bool ok() const { return true; }
 
 private:
