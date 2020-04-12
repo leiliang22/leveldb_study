@@ -5,6 +5,14 @@
 
 namespace leveldb {
 
+DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
+    : env_(raw_options.env)  
+    {}
+
+Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
+    return Status::OK();
+}
+
 DB::~DB() = default;
 
 Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
@@ -28,7 +36,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
         uint64_t new_log_number = impl->versions_->NewFileNumber();
         WriteableFile* lfile;
         s = options.env->NewWritableFile(LogFileName(dbname, new_log_number),
-                                          &lfile);
+                                         &lfile);
         if (s.ok()) {
             edit.SetLogNumber(new_log_number);
             impl->logfile_ = lfile;
@@ -42,7 +50,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
     if (s.ok() && save_manifest) {
         edit.SetPrevLogNumber(0);  // No older logs needed after recovery
         edit.SetLogNumber(impl->logfile_number_);
-        s = impl->versions_->LogAndApply(&edit, &impl->mutex_);
+        //s = impl->versions_->LogAndApply(&edit, &impl->mutex_);
     }
     if (s.ok()) {
         assert(impl->mem_ != nullptr);

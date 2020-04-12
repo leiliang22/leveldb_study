@@ -117,30 +117,30 @@ target_sources(leveldb
     #"db/builder.h"
     #"db/c.cc"
     "db/db_impl.cc"
-    #"db/db_impl.h"
+    "db/db_impl.h"
     #"db/db_iter.cc"
     #"db/db_iter.h"
     #"db/dbformat.cc"
-    #"db/dbformat.h"
+    "db/dbformat.h"
     #"db/dumpfile.cc"
-    #"db/filename.cc"
-    #"db/filename.h"
+    "db/filename.cc"
+    "db/filename.h"
     #"db/log_format.h"
     #"db/log_reader.cc"
     #"db/log_reader.h"
-    #"db/log_writer.cc"
-    #"db/log_writer.h"
-    #"db/memtable.cc"
-    #"db/memtable.h"
+    "db/log_writer.cc"
+    "db/log_writer.h"
+    "db/memtable.cc"
+    "db/memtable.h"
     #"db/repair.cc"
     #"db/skiplist.h"
     #"db/snapshot.h"
     #"db/table_cache.cc"
     #"db/table_cache.h"
     #"db/version_edit.cc"
-    #"db/version_edit.h"
+    "db/version_edit.h"
     #"db/version_set.cc"
-    #"db/version_set.h"
+    "db/version_set.h"
     #"db/write_batch_internal.h"
     #"db/write_batch.cc"
     #"port/port_stdcxx.h"
@@ -190,7 +190,7 @@ target_sources(leveldb
     #"${LEVELDB_PUBLIC_INCLUDE_DIR}/comparator.h"
     "${LEVELDB_PUBLIC_INCLUDE_DIR}/db.h"
     #"${LEVELDB_PUBLIC_INCLUDE_DIR}/dumpfile.h"
-    #"${LEVELDB_PUBLIC_INCLUDE_DIR}/env.h"
+    "${LEVELDB_PUBLIC_INCLUDE_DIR}/env.h"
     "${LEVELDB_PUBLIC_INCLUDE_DIR}/export.h"
     #"${LEVELDB_PUBLIC_INCLUDE_DIR}/filter_policy.h"
     #"${LEVELDB_PUBLIC_INCLUDE_DIR}/iterator.h"
@@ -202,19 +202,11 @@ target_sources(leveldb
     #"${LEVELDB_PUBLIC_INCLUDE_DIR}/write_batch.h"
 )
 
-if (WIN32)
-  target_sources(leveldb
-    PRIVATE
-      "util/env_windows.cc"
-      "util/windows_logger.h"
-  )
-else (WIN32)
-  target_sources(leveldb
-    PRIVATE
-      #"util/env_posix.cc"
-      #"util/posix_logger.h"
-  )
-endif (WIN32)
+target_sources(leveldb
+  PRIVATE
+    "util/env_posix.cc"
+    #"util/posix_logger.h"
+)
 
 # MemEnv is not part of the interface and could be pulled to a separate library.
 target_sources(leveldb
@@ -294,7 +286,7 @@ if(LEVELDB_INSTALL)
       #"${LEVELDB_PUBLIC_INCLUDE_DIR}/comparator.h"
       "${LEVELDB_PUBLIC_INCLUDE_DIR}/db.h"
       #"${LEVELDB_PUBLIC_INCLUDE_DIR}/dumpfile.h"
-      #"${LEVELDB_PUBLIC_INCLUDE_DIR}/env.h"
+      "${LEVELDB_PUBLIC_INCLUDE_DIR}/env.h"
       "${LEVELDB_PUBLIC_INCLUDE_DIR}/export.h"
       #"${LEVELDB_PUBLIC_INCLUDE_DIR}/filter_policy.h"
       #"${LEVELDB_PUBLIC_INCLUDE_DIR}/iterator.h"

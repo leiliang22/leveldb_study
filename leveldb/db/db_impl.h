@@ -9,7 +9,7 @@ namespace leveldb {
 
 class DBImpl : public DB {
 public:
-    DBImpl() = default;
+    DBImpl(const Options& options, const std::string& dbname);
 
     DBImpl(DBImpl&) = delete;
     DBImpl& operator=(DBImpl&) = delete;
@@ -18,7 +18,15 @@ public:
     Status Get(const ReadOptions& options, const Slice& key, std::string* value) override;
 
 private:
+    // constant after construction
+    const InternalKeyComparator internal_comparator_;
+
     port::Mutex mutex_;
+    MemTable* mem_;
+    MemTable* imm_ GUARDED_BY(mutex_);
+    WritableFile* logfile_;
+    uint64_t logfile_number_ GUARDED_BY(mutex_);
+    log::Writer* log_;
     VersionSet* const versions_ GUARDED_BY(mutex_);
 };
 
