@@ -6,6 +6,7 @@
 #include <cassert>
 
 #include "util/arena.h"
+#include "util/random.h"
 
 namespace leveldb {
 
