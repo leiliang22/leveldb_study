@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <cassert>
 
+#include "util/arena.h"
+
 namespace leveldb {
 
 class Arena; 
