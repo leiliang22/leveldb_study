@@ -1,7 +1,22 @@
 #ifndef STORAGE_LEVELDB_DB_VERSION_EDIT_H_
 #define STORAGE_LEVELDB_DB_VERSION_EDIT_H_
 
+#include <set>
+#include <utility>
+#include <vector>
+
 namespace leveldb {
+
+struct FileMetaData {
+    FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
+
+    int refs;
+    int allowed_seeks;  // seeks allowed until compaction
+    uint64_t number;
+    uint64_t file_size;  // File size in bytes
+    InternalKey smallest;
+    InternalKey largest; 
+};
 
 class VersionEdit {
 public:

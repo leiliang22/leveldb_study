@@ -6,6 +6,7 @@
 
 #include "leveldb/db.h"
 #include "db/memtable.h"
+#include "db/log_writer.h"
 
 namespace leveldb {
 
@@ -23,6 +24,8 @@ public:
 private:
     friend class DB;
     struct Writer;
+
+    Status MakeRoomForWrite(bool force) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
     // constant after construction
     const InternalKeyComparator internal_comparator_;

@@ -1,9 +1,21 @@
 #include "leveldb/db.h"
 #include "db/db_impl.h"
 #include "leveldb/status.h"
+#include "leveldb/write_batch.h"
 #include <iostream>
 
 namespace leveldb {
+
+struct DBImpl::Writer {
+    explicit DBImpl::Writer(port::Mutex* mu)
+        : batch(nullptr), sync(false), done(false), cv(mu) {}
+    
+    Status status;
+    WriteBatch* batch;
+    bool sync;
+    bool done;
+    port::CondVar cv;
+};
 
 DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
     : env_(raw_options.env)  
@@ -79,7 +91,7 @@ Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
 
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     Writer w(&mutex_);
-    w.batch = batch;
+    w.batch = updates;
     w.sync = options.sync;
     w.done = false;
 
@@ -97,7 +109,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     uint64_t last_sequence = versions_->LastSequence();
     Writer* last_writer = &w;
     if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
-        WriteBatch* watch_batch = BuildBatchGroup(&last_sequence);
+        WriteBatch* write_batch = BuildBatchGroup(&last_sequence);
         WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
         last_sequence += WriteBatchInternal::Count(write_batch);
         {
