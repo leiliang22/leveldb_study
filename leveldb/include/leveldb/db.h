@@ -44,6 +44,11 @@ public:
     // may return some other Status on a error.
     virtual Status Get(const ReadOptions& options, const Slice& key,
 		       std::string* value) = 0;
+
+    // apply the specified updates to the database.
+    // Return OK on success, non-OK on failure.
+    // Note: consider setting options.sync = true.
+    virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
 };
 
 }  // namespace leveldb

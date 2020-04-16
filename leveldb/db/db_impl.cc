@@ -62,9 +62,9 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
 }
 
 Status DB::Put(const WriteOptions& opt, const Slice& key, const Slice& value) {
-    Status s;
-    std::cout << "PUT" << std::endl;
-    return s;
+    WriteBatch batch;
+    batch.Put(key, value);
+    return Write(opt, &batch);
 }
 
 Status DB::Get(const ReadOptions& opt, const Slice& key, std::string* value) {
@@ -73,10 +73,72 @@ Status DB::Get(const ReadOptions& opt, const Slice& key, std::string* value) {
     return s;
 }
 
-Status DBImpl::Put(const WriteOptions& options, const Slice& key, const Slice& value) {
-    Status s;
-    std::cout << "IMPL PUT" << std::endl;
-    return s;
+Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
+    return DB::Put(o, key, val);
+}
+
+Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
+    Writer w(&mutex_);
+    w.batch = batch;
+    w.sync = options.sync;
+    w.done = false;
+
+    MutexLock l(&mutex_);
+    writers_.push_back(&w);
+    while (!w.done() && &w != writers_.front()) {
+        w.cv.Wait();
+    }
+    if (w.done) {
+        return w.status;
+    }
+
+    // May temporarily unlock and wait
+    Status status = MakeRoomForWrite(updates == nullptr);
+    uint64_t last_sequence = versions_->LastSequence();
+    Writer* last_writer = &w;
+    if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
+        WriteBatch* watch_batch = BuildBatchGroup(&last_sequence);
+        WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
+        last_sequence += WriteBatchInternal::Count(write_batch);
+        {
+            mutex_.Unlock();
+            status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
+            bool sync_error = false;
+            if (status.ok() && options.sync) {
+                status = logfile_->Sync()
+                if (!status.ok()) {
+                    sync_error = true;
+                }
+            }
+            if (status.ok()) {
+                status = WriteBatchInternal::InsertInto(write_batch, mem_);
+            }
+            mutex_.Lock();
+            if (sync_error) {
+                RecordBackgroundError(status);
+            }
+        }
+        if (write_batch == tmp_batch_) tmp_batch_->Clear();
+
+        versions_->SetLastSequence(last_sequence);
+    }
+
+    while (true) {
+        Writer* ready = writers_.front();
+        writers_.pop_front();
+        if (ready != &w) {
+            ready->status = status;
+            ready->done = true;
+            ready->cv.Signal()
+        }
+        if (ready == last_writer) break;
+    }
+
+    if (!writers_.empty()) {
+        writers_.front()->cv.Signal();
+    }
+
+    return status;
 }
 
 Status DBImpl::Get(const ReadOptions& options, const Slice& key, std::string* value) {
