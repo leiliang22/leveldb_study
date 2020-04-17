@@ -130,10 +130,75 @@ private:
     log::Writer* descriptor_log_;
     Version dummy_versions_;  // Head of circular doubly-linked list of versions
     Version* current_;        // == dummy_versions_.prev_
+
+    // per-level key at which the next compaction at that level should start
+    // either an empty string, or a valid internalKey
+    std::string compact_pointer[config::kNumLevels];
 };
 
 class Compaction {
+public:
+    ~Compaction();
 
+    // return the level that is being compacted. inputs from "level"
+    // and "level + 1" will be merged to produce a set of "level+1" files
+    int level() const { return level_; }
+
+    VersionEdit* edit() { return &edit_; }
+
+    // which must be either 0 or 1
+    int num_input_files(int which) const { return inputs_[which].size(); }
+    FileMetaData* input(int which, int i) const { return inputs_[which][i]; }
+    uint64_t MaxOutputFileSize() const { return max_output_file_size; }
+
+    // is this a trivial compaction that can be implemented by just
+    // moving a single input file to the next level (no merging or splitting)
+    bool IsTrivialMove() const;
+
+    // add all inputs to this compaction as delete operations to *edit
+    void AddInputDeletions(VersionEdit* edit);
+
+    // return true iff the information we have available guarantees that 
+    // the compaction is producing data in "level+1" for which no data exists
+    // in levels greater than "level + 1".
+    bool IsBaseLevelForKey(const Slice& user_key);
+
+    // return true if  we should stop building the current output 
+    // before processing "internal_key"
+    bool ShouldStopBefore(const Slice& internal_key);
+
+    // release the input version for the compaction, once the compaction is succ.
+    void ReleaseInputs();
+
+private:
+    friend class Version;
+    friend class VersionSet;
+
+    Compaction(const Option* options, int level);
+
+    int level_;
+    uint64_t max_output_file_size;
+    Version* input_version_;
+    VersionEdit edit_;
+
+    // Each compaction reads inputs from "level_" and "level_ + 1"
+    std::vector<FileMetaData*> inputs_[2];
+
+    // state used to check for number of overlapping grandparent files
+    // (parent == level_+1, grandparent == level_ + 2)
+    std::vector<FileMetaData*> grandparents_;
+    size_t grandparent_index_;  // Index in grandparent files
+    bool seen_key_;             // Some output key has been seen
+    int64_t overlapped_bytes_;  // Bytes of overlap between current output
+                                // and grandparent files
+
+    // state for implementing IsBaseLevelForKey
+
+    // level_ptrs_ holds indices into input_version_->levels_: our state
+    // is that we are positioned at one of the file ranges for each 
+    // higher level than the ones involved in this compaction 
+    // (i.e. for all L >= level_ + 2)
+    size_t level_ptrs_[config::kNumLevels];
 };
 }  // namespace leveldb
 #endif  // STORAGE_LEVELDB_DB_VERSION_SET_H_
