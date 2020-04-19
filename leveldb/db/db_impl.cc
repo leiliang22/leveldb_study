@@ -1,5 +1,6 @@
 #include "leveldb/db.h"
 #include "db/db_impl.h"
+#include "db/version_set.h"
 #include "leveldb/status.h"
 #include "leveldb/write_batch.h"
 #include <iostream>
@@ -89,6 +90,81 @@ Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
     return DB::Put(o, key, val);
 }
 
+Status DBImpl::WriteLevel0Table(Memtable* mem, VersionEdit* edit, Version* base) {
+    mutex_.AssertHeld();
+    const uint64_t start_micros = env_->NowMicros();
+    FileMetaData meta;
+    meta.number = versions_->NewFileNumber();
+    pending_outputs_.insert(meta.number);
+    Iterator iter = mem->NewIterator();
+    Log(options_.info_log, "Level-0 table #%llu: started",
+        (unsigned long long)meta.number);
+    
+    Status s;
+    {
+        mutex_.Unlock();
+        s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+        mutex_.Lock();
+    }
+
+    Log(options_.info_log, "Level-0 table #%llu: %lld bytes %s",
+        (unsigned long long)meta.number, (unsigned long long)meta.file_size,
+        s.ToString().c_str());
+    delete iter;
+    pending_outputs_.erase(meta.number);
+
+    // Note that if file_size is zero, the file has been deleted and
+    // should not be added to the manifest
+    int level = 0;
+    if (s.ok() && meta.file_size > 0) {
+        const Slice min_user_key = meta.smallest.user_key();
+        const Slice max_user_key = meta.largest.user_key();
+        if (base != nullptr) {
+            level = base->PickLevelForMemtableOutput(min_user_key, max_user_key);
+        }
+        edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
+                      meta.largest);
+    }
+
+    CompactionStats stats;
+    stats.micros = env_->NowMicros() - start_micros;
+    stats.bytes_written = meta.file_size;
+    stats_[level].Add(stats);
+    return s;
+}
+
+void DBImpl::CompactMemtable() {
+    mutex_.AssertHeld();
+    assert(imm_ != nullptr);
+
+    // save the contents of the memtable as a new Table
+    VersionEdit edit;
+    Version* base = versions_->current();
+    base->Ref();
+    Status s = WriteLevel0Table(imm_, &edit, base);
+    base->Unref();
+
+    if (s.ok() && shutting_down_.load(std::memory_order_acquire)) {
+        s = Status::IOError("Delete DB during memtable compaction");
+    }
+
+    // Replace immutable memtable with the generated Table
+    if (s.ok()) {
+        edit.SetPrevLogNumber(0);
+        edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
+        s = versions_->LogAndApply(&edit, &mutex_);
+    }
+
+    if (s.ok()) {
+        imm_->Unref();
+        imm_ = nullptr;
+        has_imm_.store(false, std::memory_order_acquire);
+        RemoveObsoleteFiles();
+    } else {
+        RecordBackgroundError(s);
+    }
+}
+
 void DBImpl::MaybeScheduleCompaction() {
     mutex_.AssertHeld();
     if (background_compaction_scheduled_) {
@@ -111,7 +187,80 @@ void DBImpl::BGWork(void* db) {
 }
 
 void DBImpl::BackgroundCall() {
-    
+    MutexLock l(&mutex_);
+    assert(background_compaction_scheduled_);
+    if (shutting_down_.load(std::memory_order_acquire)) {
+        // no more background work when shutting down
+    } else if (!bg_error_.ok()) {
+        // no more background work after a background error
+    } else {
+        BackgroundCompaction();
+    }
+
+    background_compaction_scheduled_ = false;
+
+    // previous compaction may have produced too many files in a level,
+    // so reschedule another compaction if needed. 
+    MaybeScheduleCompaction();
+    background_work_finish_signal_.SignalAll();
+}
+
+void DBImpl::BackgroundCompaction() {
+    mutex_.AssertHeld();
+    if (imm_ != nullptr) {
+        CompactMemtable();
+        return;
+    }
+
+    Compaction* c;
+    bool is_manual = (manual_compaction_ != nullptr);
+    InternalKey manual_end;
+    if (is_manual) {
+
+    } else {
+        c = versions_->PickCompaction();
+    }
+
+    Status status;
+    if (c == nullptr) {
+        // nothing to do
+    } else if (!is_manual && c->IsTrivialMove()) {
+        // move file to next level
+        assert(c->num_input_files(0) == 1);
+        FileMetaData* f = c->input(0, 0);
+        c->edit()->RemoveFile(c->level(), f->number);
+        c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
+                           f->largest);
+        status = versions_->LogAndApply(c->edit(), &mutex_);
+        if (!status.ok()) {
+            RecordBackgroundError(status);
+        }
+        VersionSet::LevelSummaryStorage tmp;
+        Log(options_.info_log, "Move #%lld to level-%d %lld bytes %s: %s\n",
+            static_cast<unsigned long long>(f->number), c->level() + 1,
+            static_cast<unsigned long long>(f->file_size),
+            status.ToString().c_str(), versions_->LevelSummary(&tmp));
+    } else {
+        CompactionState* compact = new CompactionState(c);
+        status = DoCompactionWork(compact);
+        if (!status.ok()) {
+            RecordBackgroundError(status);
+        }
+        CleanupCompaction(compact);
+        c->ReleaseInputs();
+        RemoveObsoleteFiles();
+    }
+    delete c;
+
+    if (status.ok()) {
+        // done
+    } else if (shutting_down_.load(std::memory_order_acquire)) {
+        // ignore compaction errors found during shutting down
+    } else {
+        Log(options_.info_log, "Compaction error: %s", status.ToString().c_str());
+    }
+
+    if (is_manual) {}
 }
 
 // REQUIRES : mutex_ is held
