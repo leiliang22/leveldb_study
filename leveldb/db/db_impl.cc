@@ -89,6 +89,92 @@ Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
     return DB::Put(o, key, val);
 }
 
+void DBImpl::MaybeScheduleCompaction() {
+    mutex_.AssertHeld();
+    if (background_compaction_scheduled_) {
+        // already scheduled
+    } else if (shutting_down_.load(std::memory_order_acquire)) {
+        // DB is being deleted; no more background compactions
+    } else if (!bg_error_.ok()) {
+        // already got an error; no more changes
+    } else if (imm_ == nullptr && manual_compaction_ == nullptr &&
+               !versions_->NeedsCompaction()) {
+        // no work to be done
+    } else {
+        background_compaction_scheduled_ = true;
+        env_->Schedule(&DbImpl::BGWork, this);
+    }
+}
+
+void DBImpl::BGWork(void* db) {
+    reinterpret_cast<DBImpl*>(db)->BackgroundCall();
+}
+
+void DBImpl::BackgroundCall() {
+    
+}
+
+// REQUIRES : mutex_ is held
+// REQUIRES : this thread is currently at the front of the writer queue
+Status DBImpl::MakeRoomForWrite(bool force) {
+    mutex_.AssertHeld();
+    assert(!writes_.empty());
+    bool allow_delay = !force;
+    Status s;
+    while (true) {
+        if (bg_error_.ok()) {
+            s = bg_error_;
+            break;
+        } else if (allow_delay && versions_->NumLevelFile(0) >=
+                                      config::kL0_SlowdownWritesTrigger) {
+            // we are getting close to hitting a hard limit on the number of
+            // L0 files. Rather than delaying a single write by several seconds
+            // when we hit the hard limit, start delaying each individual write
+            // by 1ms to reduce latency varience. Also, this delay hands over some CPU 
+            // to the compaction thread in case it is sharing the same core as the writer
+            mutex_.Unlock();
+            env_->SleepForMicroseconds(1000);
+            allow_delay = false;
+            mutex_.Lock();
+        } else if (!force && (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
+            // there is room is current table
+            break;
+        } else if (imm_ != nullptr) {
+            // we have filled up the current memtable, but the previous one 
+            // is still being conpacted, so we wait.
+            Log(options_->info_log, "Current memtable full; waiting...\n");
+            background_work_finished_signal_.Wait();
+        } else if (versions_->NumLevelFile(0) >= config::kL0_StopWritesTrigger){
+            // there are too many level-0 files
+            Log(options_->info_log, "Too many L0 files, waiting...\n");
+            background_work_finished_signal_.Wait();
+        } else {
+            // Attempt to switch to a new memtable and trigger compaction of old
+            assert(versions_->PrevLogNumber() == 0);
+            uint64_t new_log_number = versions_->NewFileNumber();
+            WritableFile* lfile = nullptr;
+            s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
+            if (!s.ok()) {
+                // avoid chewing througth file number space in a tight up
+                versions_->ReuseFileNumber(new_log_number);
+                break;
+            }
+            delete log_;
+            delete logfile_;
+            logfile_ = lfile;
+            logfile_number_ = new_log_number;
+            log_ = new log::Writer(lfile);
+            imm_ = mem_;
+            has_imm_.store(true, std::memory_order_release);
+            mem_ = new MemTable(internal_comparator_);
+            mem_.Ref();
+            force = false;
+            MaybeScheduleCompaction();
+        }
+    }
+    return s;
+}
+
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     Writer w(&mutex_);
     w.batch = updates;

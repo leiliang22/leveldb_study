@@ -26,11 +26,15 @@ private:
     struct Writer;
 
     Status MakeRoomForWrite(bool force) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+    void MaybeScheduleCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+    static void BGWork(void* db);
+    void BackgroundCall();
 
     // constant after construction
     const InternalKeyComparator internal_comparator_;
 
     port::Mutex mutex_;
+    std::atomic<bool> shutting_down_;
     MemTable* mem_;
     MemTable* imm_ GUARDED_BY(mutex_);
     WritableFile* logfile_;
@@ -40,6 +44,9 @@ private:
 
     // queue of writers.
     std::deque<Writer*> writers_ GUARDED_BY(mutex_);
+
+    bool background_compaction_scheduled_ GUARDED_BY(mutex_);
+    Status bg_error_ GUARDED_BY(mutex_);
 };
 
 }  // namespace leveldb
