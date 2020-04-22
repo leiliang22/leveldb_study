@@ -95,6 +95,8 @@ public:
 
     uint64_t NewFileNumber() { return next_file_number_++; }
 
+    Status LogAndApply(VersionEdit* edit, port::Mutex* mu);
+
 private:
     class Builder;
 
