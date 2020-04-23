@@ -29,7 +29,7 @@ public:
     bool RecordReadSample(Slice key);
 
     void Ref();
-    void UnRef();
+    void Unref();
 
     void GetOverlappingInputs(int level,
             const InternalKey* begin,  // nullptr means before all keys
@@ -109,7 +109,7 @@ private:
                   InternalKey* largest);
     void GetRange2(const std::vector<FileMetaData*>& inputs1,
                    const std::vector<FileMetaData*>& inputs2,
-                   InternalKeys* smallest, InternalKeys* largest);
+                   InternalKey* smallest, InternalKey* largest);
     void SetupOtherInputs(Compaction* c);
 
     // Save current contents to *log
@@ -135,7 +135,7 @@ private:
 
     // per-level key at which the next compaction at that level should start
     // either an empty string, or a valid internalKey
-    std::string compact_pointer[config::kNumLevels];
+    std::string compact_pointer_[config::kNumLevels];
 };
 
 class Compaction {
