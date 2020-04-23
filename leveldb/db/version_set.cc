@@ -139,6 +139,75 @@ public:
     }
 };
 
+void VersionSet::AppendVersion(Version* v) {
+    // make "v" current
+    assert(v->refs_ == 0);
+    assert(v != current_);
+    if (current_ != nullptr) {
+        current_->Unref();
+    }
+    current_ = v;
+    v->Ref();
+
+    // append to linked list
+    v->prev_ = dummy_versions_.prev_;
+    v->next_ = &dummy_versions_;
+    v->prev_->next_ = v;
+    v->next_->prev_ = v;
+}
+
+void VersionSet::Finallize(Version* v) {
+    // precompute best level for next compaction
+    int best_level = -1;
+    double best_score = -1;
+
+    for (int level = 0; level < config::kNumLevels - 1; level++) {
+        double score;
+        if (level == 0) {
+            score = v->files_[level].size() / static_cast<double>(config::kL0_CompactionTrigger);
+        } else {
+            // compute the ratio of current size to size limit
+            const uint64_t level_bytes = TotalFileSize(v->files_[level]);
+            score = static_cast<double>(level_bytes) / MaxByteForLevel(options_, level);
+        }
+
+        if (score > best_score) {
+            best_level = level;
+            best_score = score;
+        }
+    }
+    v->compaction_level_ = best_level;
+    v->compaction_score_ = best_score;
+}
+
+Status VersionSet::WriteSnapshot(log::Writer* log) {
+    // save metadata
+    VersionEdit edit;
+    edit.SetComparatorName(icmp_.user_comparator()->Name());
+
+    // save compaction pointers
+    for (int level = 0; level < config::kNumLevels; level++) {
+        if (!compact_pointer_[level].empty()) {
+            InternalKey key;
+            key.DecodeFrom(compact_pointer_[level]);
+            edit.SetCompactPointer(level, key);
+        }
+    }
+
+    // save files
+    for (int level = 0; level < config::kNumLevels; level++) {
+        const std::vector<FileMetaData*>& files = current_->files_[level];
+        for (size_t i = 0; i < files.size(); i++) {
+            const FileMetaData* f = files[i];
+            edit.AddFile(level, f->number, f->file_size, f->smallest, f->largest);
+        }
+    }
+
+    std::string record;
+    edit.EncodeTo(&record);
+    return log->AddRecord(record);
+}
+
 Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
     if (edit->has_log_number_) {
         assert(edit->log_number_ >= log_number_);
@@ -194,8 +263,31 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
                 Log(options_->info_log, "MANIFEST write: %s\n", s.ToString().c_str());
             }
         }
+        // if we just created a new descriptor file, install it by writing a
+        // new CURRENT file that points to it.
+        if (s.ok() && !new_manifest_file.empty()) {
+            s = SetCurrentFile(env_, dbname_, manifest_file_number_);
+        }
         mu->Lock();
     }
+
+    // install the new version
+    if (s.ok()) {
+        AppendVersion(v);
+        log_number_ = edit->log_number_;
+        prev_log_number_ = edit->prev_log_number_;
+    } else {
+        delete v;
+        if (!new_manifest_file.empty()) {
+            delete descriptor_log_;
+            delete descriptor_file_;
+            descriptor_log_ = nullptr;
+            descriptor_file_ = nullptr;
+            env_->RemoveFile(new_manifest_file);
+        }
+    }
+
+    return s;
 }
 
 }  // namespace leveldb

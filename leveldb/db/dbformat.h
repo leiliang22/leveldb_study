@@ -3,6 +3,7 @@
 
 #include <string>
 
+#include "leveldb/db.h"
 #include "leveldb/slice.h"
 
 namespace leveldb {
@@ -52,6 +53,11 @@ public:
 
 private:
 }
+
+// a helper class useful for DBImpl::Get()
+class LookupKey {
+    
+};
 
 }  // namespace leveldb
 
