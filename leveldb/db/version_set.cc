@@ -80,7 +80,7 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
     state.found = false;
     state.stats = stats;
     state.last_file_read = nullptr;
-    satte.last_file_read_level = -1;
+    state.last_file_read_level = -1;
 
     state.options = &options;
     state.ikey = k.internal_key();
