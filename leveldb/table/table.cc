@@ -125,6 +125,62 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
 
 Table::~Table() { delete rep_; }
 
+static void DeleteBlock(void* arg, void* ignore)
 
+// convert an index iterator value (i.e. an encoded BlockHandle)
+// into an iterator over the contents of the corresponding block
+Iterator* Table::BlockReader(void* arg, const Readoptions& options,
+                             const Slice& index_value) {
+    Table* table = reinterpret_cast<Table*>(arg);
+    Cache* block_cache = table->rep_->options.block_cache;
+    Block* block = nullptr;
+    Cache::Handle* cache_handle = nullptr;
+
+    BlockHandle handle;
+    Slice input = index_value;
+    Status s = handle.DecodeFrom(&input);
+    // we intentionally allow extra stuff in index_value so that we
+    // can add more features in the future
+
+    if (s.ok()) {
+        BlockContents contents;
+        if (block_cache != nullptr) {
+            char cache_key_buffer[16];
+            EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
+            EncodeFixed64(cache_key_buffer + 8, handle.offset());
+            Slice key(cache_key_buffer, sizeof(cache_key_buffer));
+            cache_handle = block_cache->Lookup(key);
+            if (cache_handle != nullptr) {
+                block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
+            } else {
+                s = ReadBlock(table->rep_->file, options, handle, &contents);
+                if (s.ok()) {
+                    block = new Block(contents);
+                    if (contents.cachable && options.fill_cache) {
+                        cache_handle = block_cache->Insert(key, block, block->size(), &DeleteCachedBlock);
+                    }
+                }
+            }
+        } else {
+            s = ReadBlock(table->rep_->file, options, handle, &contents);
+            if (s.ok()) {
+                block = new Block(contents);
+            }
+        }
+    }
+
+    Iterator* iter;
+    if (block != nullptr) {
+        iter = block->NewIterator(table->rep_->options.comparator);
+        if (cache_handle == nullptr) {
+            iter->RegisterCleanup(&DeleteBlock, block, nullptr);
+        } else {
+            iter->RegisterCleanup(&ReleaseBlock, block_cache, cache_handle);
+        }
+    } else {
+        iter = NewErrorIterator(s);
+    }
+    return iter;
+}
 
 }  // namespace leveldb
